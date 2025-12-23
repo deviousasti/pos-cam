@@ -3,11 +3,14 @@ const elements = {
   video: document.getElementById('preview'),
   overlay: document.getElementById('videoOverlay'),
   capture: document.getElementById('captureButton'),
-  retake: document.getElementById('retakeButton'),
+  fallbackButton: document.getElementById('androidFallbackButton'),
+  fallbackInput: document.getElementById('androidFallbackInput'),
   status: document.getElementById('status'),
   output: document.getElementById('outputCanvas'),
   work: document.getElementById('workCanvas')
 };
+
+const frame = { padding: 12, bottom: 60 };
 
 let stream = null;
 let locationLabel = 'Location unavailable';
@@ -94,7 +97,7 @@ async function locateUser() {
 
 async function initCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus('Camera not supported in this browser.', 'warn');
+    setStatus('Camera not supported in this browser. Use Android backup capture below.', 'warn');
     return;
   }
   try {
@@ -106,7 +109,7 @@ async function initCamera() {
       setStatus('Camera ready.');
     };
   } catch (err) {
-    setStatus('Camera access denied or unavailable.', 'error');
+    setStatus('Camera access denied or unavailable. Use Android backup capture below.', 'error');
   }
 }
 
@@ -116,20 +119,24 @@ function captureFrame() {
     return null;
   }
   const { videoWidth: w, videoHeight: h } = elements.video;
-  elements.work.width = w;
-  elements.work.height = h;
+  return processDrawable(elements.video, w, h);
+}
+
+function processDrawable(drawable, width, height) {
+  elements.work.width = width;
+  elements.work.height = height;
   const ctx = elements.work.getContext('2d');
-  ctx.drawImage(elements.video, 0, 0, w, h);
-  const imgData = ctx.getImageData(0, 0, w, h);
-  atkinsonDither(imgData, w, h);
+  ctx.drawImage(drawable, 0, 0, width, height);
+  const imgData = ctx.getImageData(0, 0, width, height);
+  atkinsonDither(imgData, width, height);
   ctx.putImageData(imgData, 0, 0);
-  return { canvas: elements.work, width: w, height: h };
+  return { canvas: elements.work, width, height };
 }
 
 function renderPolaroid(source) {
   const photoWidth = 440;
   const photoHeight = Math.round((photoWidth / source.width) * source.height);
-  const frame = { padding: 24, bottom: 120 };
+
   const canvasWidth = photoWidth + frame.padding * 2;
   const canvasHeight = photoHeight + frame.padding * 2 + frame.bottom;
 
@@ -152,27 +159,105 @@ function renderPolaroid(source) {
   ctx.fillText(locationLabel, centerX, textY + 20);
 }
 
-function clearOutput() {
-  elements.output.getContext('2d').clearRect(0, 0, elements.output.width, elements.output.height);
+function downloadPolaroid() {
+  if (!elements.output.width || !elements.output.height) return;
+  try {
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = elements.output.toDataURL('image/png');
+    link.download = `pos-cam-${timestamp}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (err) {
+    setStatus('Unable to download image.', 'warn');
+  }
 }
 
-async function handleCapture() {
+function handleCapture() {
   const source = captureFrame();
   if (!source) return;
   renderPolaroid(source);
-  elements.retake.disabled = false;
-  setStatus('Captured. You can retake.');
+  downloadPolaroid();
+  setStatus('Captured. Downloading image.');
 }
 
-function handleRetake() {
-  clearOutput();
-  elements.retake.disabled = true;
-  setStatus('Ready for another capture.');
+async function handleFallbackSelection(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  setStatus('Processing uploaded capture…');
+  try {
+    const source = await prepareSourceFromFile(file);
+    renderPolaroid(source);
+    downloadPolaroid();
+    setStatus('Uploaded capture processed.');
+  } catch (err) {
+    const message = err?.message || 'Unable to process selected file.';
+    setStatus(message, 'error');
+  }
+}
+
+function prepareSourceFromFile(file) {
+  if (file.type.startsWith('image/')) {
+    return processImageFile(file);
+  }
+  if (file.type.startsWith('video/')) {
+    return processVideoFile(file);
+  }
+  return Promise.reject(new Error('Unsupported file type.'));
+}
+
+function processImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Unable to read image.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => resolve(processDrawable(img, img.naturalWidth, img.naturalHeight));
+      img.onerror = () => reject(new Error('Image load failed.'));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function processVideoFile(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+
+    const cleanup = () => {
+      if (video.src) URL.revokeObjectURL(video.src);
+    };
+
+    video.onloadeddata = () => {
+      if (!video.videoWidth || !video.videoHeight) {
+        cleanup();
+        reject(new Error('Video has no visual data.'));
+        return;
+      }
+      resolve(processDrawable(video, video.videoWidth, video.videoHeight));
+      cleanup();
+    };
+
+    video.onerror = () => {
+      cleanup();
+      reject(new Error('Video load failed.'));
+    };
+
+    video.src = URL.createObjectURL(file);
+  });
 }
 
 function bindControls() {
   elements.capture.addEventListener('click', handleCapture);
-  elements.retake.addEventListener('click', handleRetake);
+  if (elements.fallbackButton && elements.fallbackInput) {
+    elements.fallbackButton.addEventListener('click', () => elements.fallbackInput.click());
+    elements.fallbackInput.addEventListener('change', handleFallbackSelection);
+  }
 }
 
 async function bootstrap() {
