@@ -7,6 +7,8 @@ const elements = {
   fallbackInput: document.getElementById('androidFallbackInput'),
   status: document.getElementById('status'),
   locationStatus: document.getElementById('locationStatus'),
+  exposureSlider: document.getElementById('exposureSlider'),
+  exposureValue: document.getElementById('exposureValue'),
   output: document.getElementById('outputCanvas'),
   work: document.getElementById('workCanvas')
 };
@@ -15,6 +17,7 @@ const frame = { padding: 12, bottom: 60 };
 
 let stream = null;
 let locationLabel = 'Location unavailable';
+let exposureFactor = 1;
 const log = (...args) => { 
     console.log('[POS Cam]', ...args);
     const logEntry = document.createElement('div');
@@ -37,6 +40,16 @@ function setLocationStatus(message, tone = 'info') {
 
 function clamp(value) {
   return Math.max(0, Math.min(255, value));
+}
+
+function applyExposure(imageData, factor) {
+  if (factor === 1) return;
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = clamp(data[i] * factor);
+    data[i + 1] = clamp(data[i + 1] * factor);
+    data[i + 2] = clamp(data[i + 2] * factor);
+  }
 }
 
 function atkinsonDither(imageData, width, height) {
@@ -155,6 +168,7 @@ function processDrawable(drawable, width, height) {
   const ctx = elements.work.getContext('2d');
   ctx.drawImage(drawable, 0, 0, width, height);
   const imgData = ctx.getImageData(0, 0, width, height);
+  applyExposure(imgData, exposureFactor);
   atkinsonDither(imgData, width, height);
   ctx.putImageData(imgData, 0, 0);
   return { canvas: elements.work, width, height };
@@ -302,6 +316,19 @@ function processVideoFile(file) {
   });
 }
 
+function updateExposureDisplay(value) {
+  if (!elements.exposureValue) return;
+  elements.exposureValue.textContent = `${value.toFixed(1)}x`;
+}
+
+function handleExposureChange(event) {
+  const value = parseFloat(event.target.value);
+  if (Number.isNaN(value)) return;
+  exposureFactor = value;
+  updateExposureDisplay(value);
+  log('Exposure adjusted', value);
+}
+
 function bindControls() {
   log('Binding controls');
   elements.capture.addEventListener('click', handleCapture);
@@ -311,6 +338,12 @@ function bindControls() {
       elements.fallbackInput.click();
     });
     elements.fallbackInput.addEventListener('change', handleFallbackSelection);
+  }
+  if (elements.exposureSlider) {
+    const initial = parseFloat(elements.exposureSlider.value) || 1;
+    exposureFactor = initial;
+    updateExposureDisplay(initial);
+    elements.exposureSlider.addEventListener('input', handleExposureChange);
   }
 }
 

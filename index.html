@@ -7,7 +7,7 @@
     <title>POS Cam</title>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="app.css">
+    <link rel="stylesheet" href="app.css?version=2.0">
 </head>
 
 <body>
@@ -28,6 +28,13 @@
                 <input id="androidFallbackInput" class="sr-only" type="file" accept="image/*,android/allowCamera"
                     capture>
             </div>
+            <div class="slider-group" role="group" aria-labelledby="exposureLabel">
+                <div class="slider-labels">
+                    <span id="exposureLabel">Exposure</span>
+                    <span id="exposureValue" class="slider-value">1.0x</span>
+                </div>
+                <input id="exposureSlider" type="range" min="0.4" max="1.6" step="0.05" value="1" aria-describedby="exposureLabel">
+            </div>
             <div id="status" class="status" aria-live="polite"></div>
             <div id="locationStatus" class="status status--location" aria-live="polite">Location pending…</div>
         </section>
@@ -44,7 +51,7 @@
     <!-- Hidden working canvas for processing frames -->
     <canvas id="workCanvas" class="offscreen" aria-hidden="true"></canvas>
 
-    <script src="app.js?version=1.0" defer></script>
+    <script src="app.js?version=2.0" defer></script>
 </body>
 
 </html>
