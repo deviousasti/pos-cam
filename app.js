@@ -9,6 +9,8 @@ const elements = {
   locationStatus: document.getElementById('locationStatus'),
   exposureSlider: document.getElementById('exposureSlider'),
   exposureValue: document.getElementById('exposureValue'),
+  contrastSlider: document.getElementById('contrastSlider'),
+  contrastValue: document.getElementById('contrastValue'),
   output: document.getElementById('outputCanvas'),
   work: document.getElementById('workCanvas')
 };
@@ -18,6 +20,7 @@ const frame = { padding: 12, bottom: 60 };
 let stream = null;
 let locationLabel = 'Location unavailable';
 let exposureFactor = 1;
+let contrastFactor = 1;
 const log = (...args) => { 
     console.log('[POS Cam]', ...args);
     const logEntry = document.createElement('div');
@@ -49,6 +52,17 @@ function applyExposure(imageData, factor) {
     data[i] = clamp(data[i] * factor);
     data[i + 1] = clamp(data[i + 1] * factor);
     data[i + 2] = clamp(data[i + 2] * factor);
+  }
+}
+
+function applyContrast(imageData, factor) {
+  if (factor === 1) return;
+  const data = imageData.data;
+  const midpoint = 128;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = clamp((data[i] - midpoint) * factor + midpoint);
+    data[i + 1] = clamp((data[i + 1] - midpoint) * factor + midpoint);
+    data[i + 2] = clamp((data[i + 2] - midpoint) * factor + midpoint);
   }
 }
 
@@ -169,6 +183,7 @@ function processDrawable(drawable, width, height) {
   ctx.drawImage(drawable, 0, 0, width, height);
   const imgData = ctx.getImageData(0, 0, width, height);
   applyExposure(imgData, exposureFactor);
+  applyContrast(imgData, contrastFactor);
   atkinsonDither(imgData, width, height);
   ctx.putImageData(imgData, 0, 0);
   return { canvas: elements.work, width, height };
@@ -329,6 +344,19 @@ function handleExposureChange(event) {
   log('Exposure adjusted', value);
 }
 
+function updateContrastDisplay(value) {
+  if (!elements.contrastValue) return;
+  elements.contrastValue.textContent = `${value.toFixed(1)}x`;
+}
+
+function handleContrastChange(event) {
+  const value = parseFloat(event.target.value);
+  if (Number.isNaN(value)) return;
+  contrastFactor = value;
+  updateContrastDisplay(value);
+  log('Contrast adjusted', value);
+}
+
 function bindControls() {
   log('Binding controls');
   elements.capture.addEventListener('click', handleCapture);
@@ -344,6 +372,12 @@ function bindControls() {
     exposureFactor = initial;
     updateExposureDisplay(initial);
     elements.exposureSlider.addEventListener('input', handleExposureChange);
+  }
+  if (elements.contrastSlider) {
+    const initialContrast = parseFloat(elements.contrastSlider.value) || 1;
+    contrastFactor = initialContrast;
+    updateContrastDisplay(initialContrast);
+    elements.contrastSlider.addEventListener('input', handleContrastChange);
   }
 }
 
