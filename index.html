@@ -1,41 +1,50 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POS Cam</title>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="app.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS Cam</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="app.css">
 </head>
+
 <body>
-  <main class="page">
-    <header class="top">
-      <h1>POS Cam</h1>
-      <p class="tagline">Capture, dither, and print a digital polaroid.</p>
-    </header>
+    <main class="page">
+        <header class="top">
+            <h1>POS Cam</h1>
+            <p class="tagline">Capture, dither, and print a digital polaroid.</p>
+        </header>
 
-    <section class="controls">
-      <div class="preview">
-        <video id="preview" autoplay playsinline></video>
-        <div id="videoOverlay" class="overlay">Allow camera access to begin</div>
-      </div>
-      <div class="buttons">
-        <button id="captureButton" type="button">Capture</button>
-        <button id="androidFallbackButton" type="button">Photo Upload</button>
-        <input id="androidFallbackInput" class="sr-only" type="file" accept="image/*,android/allowCamera" capture>
-      </div>
-      <div id="status" class="status" aria-live="polite"></div>
-    </section>
+        <section class="controls">
+            <div class="preview">
+                <video id="preview" autoplay playsinline></video>
+                <div id="videoOverlay" class="overlay">Allow camera access to begin</div>
+            </div>
+            <div class="buttons">
+                <button id="captureButton" type="button">Capture</button>
+                <button id="androidFallbackButton" type="button">Photo Upload</button>
+                <input id="androidFallbackInput" class="sr-only" type="file" accept="image/*,android/allowCamera"
+                    capture>
+            </div>
+            <div id="status" class="status" aria-live="polite"></div>
+            <div id="locationStatus" class="status status--location" aria-live="polite">Location pending…</div>
+        </section>
 
-    <section class="output">
-      <canvas id="outputCanvas" aria-label="Polaroid output"></canvas>
-    </section>
-  </main>
+        <section class="output">
+            <canvas id="outputCanvas" aria-label="Polaroid output"></canvas>
+        </section>
+        <details>
+            <summary>Debug Logs</summary>
+            <div id="logs"></div>
+        </details>
+    </main>
 
-  <!-- Hidden working canvas for processing frames -->
-  <canvas id="workCanvas" class="offscreen" aria-hidden="true"></canvas>
+    <!-- Hidden working canvas for processing frames -->
+    <canvas id="workCanvas" class="offscreen" aria-hidden="true"></canvas>
 
-  <script src="app.js" defer></script>
+    <script src="app.js?version=1.0" defer></script>
 </body>
+
 </html>

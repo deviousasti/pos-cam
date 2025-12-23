@@ -6,6 +6,7 @@ const elements = {
   fallbackButton: document.getElementById('androidFallbackButton'),
   fallbackInput: document.getElementById('androidFallbackInput'),
   status: document.getElementById('status'),
+  locationStatus: document.getElementById('locationStatus'),
   output: document.getElementById('outputCanvas'),
   work: document.getElementById('workCanvas')
 };
@@ -14,10 +15,24 @@ const frame = { padding: 12, bottom: 60 };
 
 let stream = null;
 let locationLabel = 'Location unavailable';
+const log = (...args) => { 
+    console.log('[POS Cam]', ...args);
+    const logEntry = document.createElement('div');
+    logEntry.textContent = `[POS Cam] ${args.join(' ')}`;
+    document.getElementById('logs').appendChild(logEntry);
+};
 
 function setStatus(message, tone = 'info') {
   elements.status.textContent = message;
   elements.status.dataset.tone = tone;
+  log('Status update', { tone, message });
+}
+
+function setLocationStatus(message, tone = 'info') {
+  if (!elements.locationStatus) return;
+  elements.locationStatus.textContent = message;
+  elements.locationStatus.dataset.tone = tone;
+  log('Location status update', { tone, message });
 }
 
 function clamp(value) {
@@ -74,20 +89,26 @@ function formatLocation(position) {
 }
 
 async function locateUser() {
+  log('locateUser invoked');
   if (!navigator.geolocation) {
+    setLocationStatus('Geolocation unsupported; location will be empty.', 'warn');
     setStatus('Geolocation unsupported; location will be empty.', 'warn');
     return;
   }
-  setStatus('Requesting location…');
+  setLocationStatus('Requesting location…');
   return new Promise(resolve => {
     navigator.geolocation.getCurrentPosition(
       pos => {
         locationLabel = formatLocation(pos);
-        setStatus('Location locked.');
+        log('Location acquired', locationLabel);
+        setLocationStatus(`Location tagged: ${locationLabel}`);
         resolve();
       },
       err => {
-        setStatus(`Location unavailable (${err.code})`, 'warn');
+        log('Location error', err);
+        const message = `Location unavailable (${err.code})`;
+        setLocationStatus(message, 'warn');
+        setStatus(message, 'warn');
         resolve();
       },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -96,19 +117,23 @@ async function locateUser() {
 }
 
 async function initCamera() {
+  log('initCamera invoked');
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus('Camera not supported in this browser. Use Android backup capture below.', 'warn');
     return;
   }
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    log('Camera stream obtained', stream?.getVideoTracks()?.[0]?.label || 'unknown track');
     elements.video.srcObject = stream;
     elements.video.onloadedmetadata = () => {
+      log('Video metadata loaded', { width: elements.video.videoWidth, height: elements.video.videoHeight });
       elements.video.play();
       elements.overlay.textContent = '';
       setStatus('Camera ready.');
     };
   } catch (err) {
+    log('Camera init failed', err);
     setStatus('Camera access denied or unavailable. Use Android backup capture below.', 'error');
   }
 }
@@ -119,10 +144,12 @@ function captureFrame() {
     return null;
   }
   const { videoWidth: w, videoHeight: h } = elements.video;
+  log('Capturing frame', { width: w, height: h });
   return processDrawable(elements.video, w, h);
 }
 
 function processDrawable(drawable, width, height) {
+  log('Processing drawable', { width, height, tag: drawable.tagName || 'media' });
   elements.work.width = width;
   elements.work.height = height;
   const ctx = elements.work.getContext('2d');
@@ -139,6 +166,8 @@ function renderPolaroid(source) {
 
   const canvasWidth = photoWidth + frame.padding * 2;
   const canvasHeight = photoHeight + frame.padding * 2 + frame.bottom;
+
+  log('Rendering polaroid', { sourceWidth: source.width, sourceHeight: source.height, canvasWidth, canvasHeight });
 
   elements.output.width = canvasWidth;
   elements.output.height = canvasHeight;
@@ -162,6 +191,7 @@ function renderPolaroid(source) {
 function downloadPolaroid() {
   if (!elements.output.width || !elements.output.height) return;
   try {
+    log('Preparing download', { width: elements.output.width, height: elements.output.height });
     const link = document.createElement('a');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     link.href = elements.output.toDataURL('image/png');
@@ -170,11 +200,13 @@ function downloadPolaroid() {
     link.click();
     link.remove();
   } catch (err) {
+    log('Download failed', err);
     setStatus('Unable to download image.', 'warn');
   }
 }
 
 function handleCapture() {
+  log('handleCapture triggered');
   const source = captureFrame();
   if (!source) return;
   renderPolaroid(source);
@@ -186,36 +218,51 @@ async function handleFallbackSelection(event) {
   const file = event.target.files?.[0];
   event.target.value = '';
   if (!file) return;
+  log('Fallback file selected', { name: file.name, type: file.type, size: file.size });
   setStatus('Processing uploaded capture…');
   try {
     const source = await prepareSourceFromFile(file);
     renderPolaroid(source);
     downloadPolaroid();
     setStatus('Uploaded capture processed.');
+    log('Fallback capture processed');
   } catch (err) {
+    log('Fallback processing failed', err);
     const message = err?.message || 'Unable to process selected file.';
     setStatus(message, 'error');
   }
 }
 
 function prepareSourceFromFile(file) {
+  log('prepareSourceFromFile', file.type);
   if (file.type.startsWith('image/')) {
     return processImageFile(file);
   }
   if (file.type.startsWith('video/')) {
     return processVideoFile(file);
   }
+  log('prepareSourceFromFile unsupported type', file.type);
   return Promise.reject(new Error('Unsupported file type.'));
 }
 
 function processImageFile(file) {
   return new Promise((resolve, reject) => {
+    log('processImageFile started', file.name);
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Unable to read image.'));
+    reader.onerror = () => {
+      log('processImageFile read error');
+      reject(new Error('Unable to read image.'));
+    };
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => resolve(processDrawable(img, img.naturalWidth, img.naturalHeight));
-      img.onerror = () => reject(new Error('Image load failed.'));
+      img.onload = () => {
+        log('processImageFile loaded', { width: img.naturalWidth, height: img.naturalHeight });
+        resolve(processDrawable(img, img.naturalWidth, img.naturalHeight));
+      };
+      img.onerror = () => {
+        log('processImageFile load error');
+        reject(new Error('Image load failed.'));
+      };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
@@ -224,6 +271,7 @@ function processImageFile(file) {
 
 function processVideoFile(file) {
   return new Promise((resolve, reject) => {
+    log('processVideoFile started', file.name);
     const video = document.createElement('video');
     video.preload = 'metadata';
     video.muted = true;
@@ -239,11 +287,13 @@ function processVideoFile(file) {
         reject(new Error('Video has no visual data.'));
         return;
       }
+      log('processVideoFile loaded', { width: video.videoWidth, height: video.videoHeight });
       resolve(processDrawable(video, video.videoWidth, video.videoHeight));
       cleanup();
     };
 
     video.onerror = () => {
+      log('processVideoFile load error');
       cleanup();
       reject(new Error('Video load failed.'));
     };
@@ -253,16 +303,22 @@ function processVideoFile(file) {
 }
 
 function bindControls() {
+  log('Binding controls');
   elements.capture.addEventListener('click', handleCapture);
   if (elements.fallbackButton && elements.fallbackInput) {
-    elements.fallbackButton.addEventListener('click', () => elements.fallbackInput.click());
+    elements.fallbackButton.addEventListener('click', () => {
+      log('Fallback button clicked');
+      elements.fallbackInput.click();
+    });
     elements.fallbackInput.addEventListener('change', handleFallbackSelection);
   }
 }
 
 async function bootstrap() {
+  log('Bootstrap starting');
   bindControls();
   await Promise.all([initCamera(), locateUser()]);
+  log('Bootstrap complete');
 }
 
 document.addEventListener('DOMContentLoaded', bootstrap);
