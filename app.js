@@ -1,6 +1,7 @@
 // POS Cam - capture, atkinson dither, polaroid render
 const elements = {
   video: document.getElementById('preview'),
+  previewContainer: document.querySelector('.preview'),
   overlay: document.getElementById('videoOverlay'),
   capture: document.getElementById('captureButton'),
   fallbackButton: document.getElementById('androidFallbackButton'),
@@ -21,12 +22,68 @@ let stream = null;
 let locationLabel = 'Location unavailable';
 let exposureFactor = 1;
 let contrastFactor = 1;
+let videoDevices = [];
+let currentDeviceIndex = 0;
+let isCyclingCamera = false;
 const log = (...args) => { 
     console.log('[POS Cam]', ...args);
     const logEntry = document.createElement('div');
     logEntry.textContent = `[POS Cam] ${args.join(' ')}`;
     document.getElementById('logs').appendChild(logEntry);
 };
+
+function stopCurrentStream() {
+  if (!stream) return;
+  stream.getTracks().forEach(track => track.stop());
+}
+
+async function refreshVideoDevices() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    videoDevices = [];
+    updatePreviewCycleState();
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    videoDevices = devices.filter(device => device.kind === 'videoinput');
+    log('Camera devices detected', videoDevices.map(device => device.label || device.deviceId));
+  } catch (err) {
+    log('enumerateDevices failed', err);
+    videoDevices = [];
+  }
+  updatePreviewCycleState();
+}
+
+function updatePreviewCycleState() {
+  if (!elements.previewContainer) return;
+  const hasMultiple = videoDevices.length > 1;
+  elements.previewContainer.classList.toggle('preview--cycle', hasMultiple);
+  if (hasMultiple) {
+    elements.previewContainer.setAttribute('title', 'Tap preview to switch cameras');
+    elements.previewContainer.setAttribute('aria-label', 'Camera preview. Tap to switch cameras.');
+    elements.previewContainer.tabIndex = 0;
+  } else {
+    elements.previewContainer.removeAttribute('title');
+    elements.previewContainer.setAttribute('aria-label', 'Camera preview');
+    elements.previewContainer.removeAttribute('tabindex');
+  }
+}
+
+function extractDeviceId(mediaStream) {
+  if (!mediaStream) return undefined;
+  const [track] = mediaStream.getVideoTracks();
+  if (!track || typeof track.getSettings !== 'function') return undefined;
+  const settings = track.getSettings();
+  return settings?.deviceId;
+}
+
+function syncCurrentDeviceIndex(activeDeviceId) {
+  if (!activeDeviceId) return;
+  const nextIndex = videoDevices.findIndex(device => device.deviceId === activeDeviceId);
+  if (nextIndex >= 0) {
+    currentDeviceIndex = nextIndex;
+  }
+}
 
 function setStatus(message, tone = 'info') {
   elements.status.textContent = message;
@@ -143,25 +200,34 @@ async function locateUser() {
   });
 }
 
-async function initCamera() {
-  log('initCamera invoked');
+async function initCamera(deviceId) {
+  log('initCamera invoked', deviceId ? { deviceId } : undefined);
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus('Camera not supported in this browser. Use Android backup capture below.', 'warn');
-    return;
+    return false;
   }
+  const videoConstraints = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'environment' };
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const nextStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+    stopCurrentStream();
+    stream = nextStream;
     log('Camera stream obtained', stream?.getVideoTracks()?.[0]?.label || 'unknown track');
     elements.video.srcObject = stream;
     elements.video.onloadedmetadata = () => {
       log('Video metadata loaded', { width: elements.video.videoWidth, height: elements.video.videoHeight });
       elements.video.play();
       elements.overlay.textContent = '';
-      setStatus('Camera ready.');
+      const readyMessage = videoDevices.length > 1 ? 'Camera ready. Tap preview to switch cameras.' : 'Camera ready.';
+      setStatus(readyMessage);
     };
+    const activeDeviceId = extractDeviceId(nextStream);
+    await refreshVideoDevices();
+    syncCurrentDeviceIndex(activeDeviceId);
+    return true;
   } catch (err) {
     log('Camera init failed', err);
     setStatus('Camera access denied or unavailable. Use Android backup capture below.', 'error');
+    return false;
   }
 }
 
@@ -357,8 +423,58 @@ function handleContrastChange(event) {
   log('Contrast adjusted', value);
 }
 
+function handlePreviewClick(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  cycleCamera();
+}
+
+function handlePreviewKeydown(event) {
+  if (!event) return;
+  const activateKeys = ['Enter', ' ', 'Spacebar'];
+  if (!activateKeys.includes(event.key)) return;
+  event.preventDefault();
+  cycleCamera();
+}
+
+async function cycleCamera() {
+  if (isCyclingCamera) {
+    log('Camera cycle ignored; already switching');
+    return;
+  }
+  if (!stream) {
+    log('Camera cycle skipped; stream not initialized');
+    return;
+  }
+  if (videoDevices.length <= 1) {
+    log('Camera cycle skipped; insufficient devices');
+    if (!videoDevices.length) {
+      setStatus('Multiple cameras not detected on this device.', 'warn');
+    }
+    return;
+  }
+  isCyclingCamera = true;
+  const nextIndex = (currentDeviceIndex + 1) % videoDevices.length;
+  const nextDevice = videoDevices[nextIndex];
+  const label = nextDevice?.label || `Camera ${nextIndex + 1}`;
+  setStatus(`Switching to ${label}…`);
+  const switched = await initCamera(nextDevice.deviceId);
+  if (switched) {
+    setStatus(`Using ${label}. Tap preview to switch.`);
+  } else {
+    setStatus('Unable to switch camera.', 'error');
+  }
+  isCyclingCamera = false;
+}
+
 function bindControls() {
   log('Binding controls');
+  updatePreviewCycleState();
+  if (elements.previewContainer) {
+    elements.previewContainer.addEventListener('click', handlePreviewClick);
+    elements.previewContainer.addEventListener('keydown', handlePreviewKeydown);
+  }
   elements.capture.addEventListener('click', handleCapture);
   if (elements.fallbackButton && elements.fallbackInput) {
     elements.fallbackButton.addEventListener('click', () => {
