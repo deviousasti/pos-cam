@@ -17,6 +17,15 @@ const elements = {
 };
 
 const frame = { padding: 12, bottom: 60 };
+const typography = {
+  captionFont: '12px "Press Start 2P", monospace',
+  quoteFont: '13px "Press Start 2P", monospace',
+  captionLineHeight: 20,
+  quoteLineHeight: 18,
+  quoteBlockPadding: { top: 10, bottom: 12 }
+};
+const measureCanvas = document.createElement('canvas');
+const measureContext = measureCanvas.getContext('2d');
 
 let stream = null;
 let locationLabel = 'Location unavailable';
@@ -25,6 +34,8 @@ let contrastFactor = 1;
 let videoDevices = [];
 let currentDeviceIndex = 0;
 let isCyclingCamera = false;
+let quotes = [];
+let lastQuote = '';
 const log = (...args) => { 
     console.log('[POS Cam]', ...args);
     const logEntry = document.createElement('div');
@@ -96,6 +107,59 @@ function setLocationStatus(message, tone = 'info') {
   elements.locationStatus.textContent = message;
   elements.locationStatus.dataset.tone = tone;
   log('Location status update', { tone, message });
+}
+
+async function loadQuotes() {
+  try {
+    const response = await fetch('fortunes.json', { cache: 'force-cache' });
+    if (!response.ok) {
+      throw new Error(`Quote request failed with ${response.status}`);
+    }
+    const data = await response.json();
+    const incoming = Array.isArray(data?.quotes) ? data.quotes : [];
+    quotes = incoming.filter(entry => typeof entry === 'string' && entry.trim().length);
+    log('Quote list ready', quotes.length);
+  } catch (err) {
+    quotes = [];
+    log('Quote load failed', err);
+  }
+}
+
+function getRandomQuote() {
+  if (!quotes.length) return '';
+  if (quotes.length === 1) {
+    lastQuote = quotes[0];
+    return lastQuote;
+  }
+  let next = quotes[Math.floor(Math.random() * quotes.length)];
+  if (next === lastQuote) {
+    const idx = quotes.indexOf(next);
+    next = quotes[(idx + 1) % quotes.length];
+  }
+  lastQuote = next;
+  return next;
+}
+
+function getQuoteLines(text, font, maxWidth) {
+  const content = typeof text === 'string' ? text.trim() : '';
+  if (!content) return [];
+  measureContext.font = font;
+  const words = content.split(/\s+/);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measureContext.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) {
+    lines.push(current);
+  }
+  return lines;
 }
 
 function clamp(value) {
@@ -255,14 +319,24 @@ function processDrawable(drawable, width, height) {
   return { canvas: elements.work, width, height };
 }
 
-function renderPolaroid(source) {
+function renderPolaroid(source, quoteText = '') {
   const photoWidth = 440;
   const photoHeight = Math.round((photoWidth / source.width) * source.height);
+  const quoteLines = getQuoteLines(quoteText, typography.quoteFont, photoWidth - 24);
+  const quotePadding = quoteLines.length
+    ? typography.quoteLineHeight * quoteLines.length + typography.quoteBlockPadding.top + typography.quoteBlockPadding.bottom
+    : 0;
 
   const canvasWidth = photoWidth + frame.padding * 2;
-  const canvasHeight = photoHeight + frame.padding * 2 + frame.bottom;
+  const canvasHeight = photoHeight + frame.padding * 2 + frame.bottom + quotePadding;
 
-  log('Rendering polaroid', { sourceWidth: source.width, sourceHeight: source.height, canvasWidth, canvasHeight });
+  log('Rendering polaroid', {
+    sourceWidth: source.width,
+    sourceHeight: source.height,
+    canvasWidth,
+    canvasHeight,
+    quoteLines: quoteLines.length
+  });
 
   elements.output.width = canvasWidth;
   elements.output.height = canvasHeight;
@@ -274,13 +348,28 @@ function renderPolaroid(source) {
   ctx.drawImage(source.canvas, frame.padding, frame.padding, photoWidth, photoHeight);
 
   ctx.fillStyle = '#111';
-  ctx.font = '12px "Press Start 2P", monospace';
+  ctx.font = '14px "Press Start 2P", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
+
   const centerX = canvasWidth / 2;
-  const textY = photoHeight + frame.padding + 18;
+  let textY = photoHeight + frame.padding + 18;
+
+  ctx.font = typography.captionFont;
   ctx.fillText(formatDate(), centerX, textY);
-  ctx.fillText(locationLabel, centerX, textY + 20);
+  textY += typography.captionLineHeight;
+  ctx.fillText(locationLabel, centerX, textY);
+
+  ctx.font = '10px "Press Start 2P", monospace';
+  if (quoteLines.length) {
+    ctx.font = typography.quoteFont;
+    const quoteAreaTop = canvasHeight - quotePadding + typography.quoteBlockPadding.top;
+    textY = Math.max(textY + 10, quoteAreaTop);
+    quoteLines.forEach(line => {
+      ctx.fillText(line, centerX, textY);
+      textY += typography.quoteLineHeight;
+    });
+  }
 }
 
 function downloadPolaroid() {
@@ -304,7 +393,7 @@ function handleCapture() {
   log('handleCapture triggered');
   const source = captureFrame();
   if (!source) return;
-  renderPolaroid(source);
+  renderPolaroid(source, getRandomQuote());
   downloadPolaroid();
   setStatus('Captured. Downloading image.');
 }
@@ -317,7 +406,7 @@ async function handleFallbackSelection(event) {
   setStatus('Processing uploaded capture…');
   try {
     const source = await prepareSourceFromFile(file);
-    renderPolaroid(source);
+    renderPolaroid(source, getRandomQuote());
     downloadPolaroid();
     setStatus('Uploaded capture processed.');
     log('Fallback capture processed');
@@ -500,7 +589,7 @@ function bindControls() {
 async function bootstrap() {
   log('Bootstrap starting');
   bindControls();
-  await Promise.all([initCamera(), locateUser()]);
+  await Promise.all([initCamera(), locateUser(), loadQuotes()]);
   log('Bootstrap complete');
 }
 
