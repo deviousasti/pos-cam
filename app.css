@@ -48,7 +48,6 @@ body {
   border-radius: 12px;
   padding: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
   box-shadow: var(--shadow);
 }
@@ -242,4 +241,10 @@ input[type="range"]::-moz-range-thumb {
   .top h1 { font-size: 18px; }
   button { width: 100%; text-align: center; }
   .buttons { flex-direction: column; }
+}
+
+div#logs {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    padding-top: 15px;
 }
