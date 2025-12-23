@@ -18,10 +18,10 @@ const elements = {
 
 const frame = { padding: 12, bottom: 60 };
 const typography = {
-  captionFont: '12px "Press Start 2P", monospace',
-  quoteFont: '13px "Press Start 2P", monospace',
-  captionLineHeight: 20,
-  quoteLineHeight: 18,
+  captionFont: '14px "Press Start 2P", monospace',
+  quoteFont: '18px "Press Start 2P", monospace',
+  captionLineHeight: 24,
+  quoteLineHeight: 22,
   quoteBlockPadding: { top: 10, bottom: 12 }
 };
 const measureCanvas = document.createElement('canvas');
@@ -281,8 +281,9 @@ async function initCamera(deviceId) {
       log('Video metadata loaded', { width: elements.video.videoWidth, height: elements.video.videoHeight });
       elements.video.play();
       elements.overlay.textContent = '';
-      const readyMessage = videoDevices.length > 1 ? 'Camera ready. Tap preview to switch cameras.' : 'Camera ready.';
+      const readyMessage = videoDevices.length > 1 ? 'Tap to switch cameras.' : 'Camera ready.';
       setStatus(readyMessage);
+      setTimeout(() => { setStatus(""); }, 1000);
     };
     const activeDeviceId = extractDeviceId(nextStream);
     await refreshVideoDevices();
@@ -348,7 +349,7 @@ function renderPolaroid(source, quoteText = '') {
   ctx.drawImage(source.canvas, frame.padding, frame.padding, photoWidth, photoHeight);
 
   ctx.fillStyle = '#111';
-  ctx.font = '14px "Press Start 2P", monospace';
+  ctx.font = '16px "Press Start 2P", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 

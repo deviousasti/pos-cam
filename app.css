@@ -70,7 +70,7 @@ body {
 }
 
 .preview--cycle::after {
-  content: "Tap preview to switch cameras";
+  content: "<->";
   position: absolute;
   left: 50%;
   bottom: 10px;
