@@ -137,7 +137,7 @@ function getRandomQuote() {
     next = quotes[(idx + 1) % quotes.length];
   }
   lastQuote = next;
-  return next;
+  return "Gayathri & Rakesh, since 2015 ♥️";
 }
 
 function getQuoteLines(text, font, maxWidth) {
