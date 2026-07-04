@@ -1,4 +1,5 @@
 // POS Cam - capture, atkinson dither, polaroid render
+
 const elements = {
   video: document.getElementById('preview'),
   previewContainer: document.querySelector('.preview'),
